@@ -12,10 +12,10 @@ var logsCmd = &cobra.Command{
 	Use:   "logs",
 	Short: "Scan logs for error spikes, anomalies, and recurring patterns",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runScan(os.Stdout, func(cfg *config.Config) []scanner.Scanner {
+		return runScan(os.Stdout, func(cfg *config.Config) ([]scanner.Scanner, error) {
 			// TODO: implement log scanner
-			// return []scanner.Scanner{logs.New(cfg.Logs)}
-			return nil
+			// return []scanner.Scanner{logs.New(cfg.Logs)}, nil
+			return nil, nil
 		})
 	},
 }

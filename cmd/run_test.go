@@ -19,8 +19,8 @@ type stubScanner struct {
 func (s stubScanner) Name() string                     { return "stub" }
 func (s stubScanner) Scan() ([]finding.Finding, error) { return s.findings, s.err }
 
-func buildStubs(scanners ...scanner.Scanner) func(*config.Config) []scanner.Scanner {
-	return func(*config.Config) []scanner.Scanner { return scanners }
+func buildStubs(scanners ...scanner.Scanner) func(*config.Config) ([]scanner.Scanner, error) {
+	return func(*config.Config) ([]scanner.Scanner, error) { return scanners, nil }
 }
 
 func TestRunScanNoScanners(t *testing.T) {

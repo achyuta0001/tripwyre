@@ -8,6 +8,7 @@ import (
 	"github.com/achyuta0001/tripwyre/internal/config"
 	"github.com/achyuta0001/tripwyre/internal/finding"
 	"github.com/achyuta0001/tripwyre/internal/scanner"
+	"github.com/achyuta0001/tripwyre/internal/scanner/configscan"
 	"github.com/achyuta0001/tripwyre/internal/scanner/deps"
 	"github.com/spf13/cobra"
 )
@@ -16,11 +17,16 @@ var scanCmd = &cobra.Command{
 	Use:   "scan",
 	Short: "Run all scanners and print a unified report",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runScan(os.Stdout, func(cfg *config.Config) []scanner.Scanner {
-			// TODO: add config and log scanners as they are implemented
+		return runScan(os.Stdout, func(cfg *config.Config) ([]scanner.Scanner, error) {
+			cs, err := configscan.New(cfg.Config, ".")
+			if err != nil {
+				return nil, err
+			}
+			// TODO: add log scanner when implemented
 			return []scanner.Scanner{
 				deps.New(cfg.Deps, "."),
-			}
+				cs,
+			}, nil
 		})
 	},
 }

@@ -14,14 +14,19 @@ import (
 // load config → run scanners → report → apply --fail-on.
 // build receives the loaded config and returns the scanners to run,
 // so each subcommand only decides which scanners it wires in.
-func runScan(w io.Writer, build func(*config.Config) []scanner.Scanner) error {
+func runScan(w io.Writer, build func(*config.Config) ([]scanner.Scanner, error)) error {
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
+	scanners, err := build(cfg)
+	if err != nil {
+		return err
+	}
+
 	var findings []finding.Finding
-	for _, s := range build(cfg) {
+	for _, s := range scanners {
 		fs, err := s.Scan()
 		if err != nil {
 			return fmt.Errorf("%s scanner: %w", s.Name(), err)

@@ -13,8 +13,8 @@ var depsCmd = &cobra.Command{
 	Use:   "deps",
 	Short: "Scan dependencies for CVEs, license issues, and staleness",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runScan(os.Stdout, func(cfg *config.Config) []scanner.Scanner {
-			return []scanner.Scanner{deps.New(cfg.Deps, ".")}
+		return runScan(os.Stdout, func(cfg *config.Config) ([]scanner.Scanner, error) {
+			return []scanner.Scanner{deps.New(cfg.Deps, ".")}, nil
 		})
 	},
 }

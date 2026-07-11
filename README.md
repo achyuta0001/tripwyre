@@ -195,8 +195,8 @@ backend = "template"          # free default
 - [x] `--fail-on` CI exit code integration
 - [x] Deps scanner — npm adapter + OSV.dev CVE lookup + license rules
 - [x] JSON output (`--format=json`)
+- [x] Config scanner — `.env` adapter + diff rules (secrets redacted)
 - [ ] Deps staleness rule (needs registry publish dates)
-- [ ] Config scanner — `.env` adapter + diff rules
 - [ ] Log scanner — plaintext adapter + spike detection + clustering
 - [ ] Additional adapters (pip, cargo, YAML, JSON logs, k8s API)
 - [ ] `LLMReporter` + cross-scanner synthesis
