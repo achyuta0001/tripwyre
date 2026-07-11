@@ -242,3 +242,66 @@ func TestNewMissingExpectedFileErrors(t *testing.T) {
 		t.Fatal("New() error = nil, want error for configured-but-missing expected file")
 	}
 }
+
+func TestNewYAMLSourceAndExpected(t *testing.T) {
+	dir := t.TempDir()
+	observed := "database:\n  pool_size: 3\ncache:\n  ttl: 60\n"
+	if err := os.WriteFile(filepath.Join(dir, "prod.yaml"), []byte(observed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	expected := "database:\n  pool_size: 10\ncache:\n  ttl: 60\n"
+	if err := os.WriteFile(filepath.Join(dir, "expected.yaml"), []byte(expected), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.ConfigConfig{
+		Sources:  []string{"prod.yaml"},
+		Expected: "expected.yaml",
+	}
+	s, err := New(cfg, dir)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	findings, err := s.Scan()
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	if f := findByTitlePart(findings, "database.pool_size"); f == nil {
+		t.Errorf("YAML drift not detected: %+v", findings)
+	}
+	if f := findByTitlePart(findings, "cache.ttl"); f != nil {
+		t.Errorf("equal YAML value flagged: %+v", f)
+	}
+}
+
+func TestNewTOMLSourceDiffsAgainstTOMLExpected(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "prod.toml"), []byte("[cache]\nttl = 30\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "expected.toml"), []byte("[cache]\nttl = 60\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.ConfigConfig{
+		Sources:  []string{"prod.toml"},
+		Expected: "expected.toml",
+	}
+	s, err := New(cfg, dir)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	findings, err := s.Scan()
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	f := findByTitlePart(findings, "cache.ttl")
+	if f == nil {
+		t.Fatalf("TOML source drift not detected: %+v", findings)
+	}
+	if !strings.Contains(f.Title, "drifted") {
+		t.Errorf("finding = %q, want a drift finding", f.Title)
+	}
+}

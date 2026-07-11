@@ -11,10 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BurntSushi/toml"
-
 	"github.com/achyuta0001/tripwyre/internal/adapter"
 	"github.com/achyuta0001/tripwyre/internal/adapter/dotenv"
+	"github.com/achyuta0001/tripwyre/internal/adapter/structured"
 	"github.com/achyuta0001/tripwyre/internal/config"
 	"github.com/achyuta0001/tripwyre/internal/finding"
 )
@@ -28,18 +27,19 @@ type Scanner struct {
 	redact   []*regexp.Regexp
 }
 
-// New builds the production scanner for a project directory: one dotenv
-// adapter per configured source that exists in dir, and the expected
-// state parsed from cfg.Expected (.toml files are flattened to dotted
-// string keys; anything else parses as .env). An empty cfg.Expected
-// disables drift detection; a configured-but-missing expected file is
-// an error, because silently skipping it would hide every drift.
+// New builds the production scanner for a project directory: one adapter
+// per configured source that exists in dir — .toml/.yaml/.yml sources
+// flatten to dotted keys via the structured adapter, anything else
+// parses as .env — and the expected state parsed from cfg.Expected with
+// the same extension rules. An empty cfg.Expected disables drift
+// detection; a configured-but-missing expected file is an error,
+// because silently skipping it would hide every drift.
 func New(cfg config.ConfigConfig, dir string) (*Scanner, error) {
 	var adapters []adapter.Adapter
 	for _, src := range cfg.Sources {
 		path := filepath.Join(dir, src)
 		if _, err := os.Stat(path); err == nil {
-			adapters = append(adapters, dotenv.New(path))
+			adapters = append(adapters, sourceAdapter(path))
 		}
 	}
 
@@ -169,31 +169,26 @@ func (s *Scanner) display(key, value string) string {
 	return value
 }
 
-func loadExpected(path string) (map[string]string, error) {
-	if strings.HasSuffix(path, ".toml") {
-		var raw map[string]any
-		if _, err := toml.DecodeFile(path, &raw); err != nil {
-			return nil, err
-		}
-		kv := make(map[string]string)
-		flatten("", raw, kv)
-		return kv, nil
+// sourceAdapter picks the adapter for a config source by extension:
+// structured formats flatten to dotted keys, everything else is .env.
+func sourceAdapter(path string) adapter.Adapter {
+	if isStructured(path) {
+		return structured.New(path)
 	}
-	return dotenv.ParseFile(path)
+	return dotenv.New(path)
 }
 
-// flatten converts nested TOML tables into dotted string keys:
-// [cache] ttl = 60 → "cache.ttl" = "60".
-func flatten(prefix string, raw map[string]any, out map[string]string) {
-	for key, value := range raw {
-		full := key
-		if prefix != "" {
-			full = prefix + "." + key
-		}
-		if nested, ok := value.(map[string]any); ok {
-			flatten(full, nested, out)
-			continue
-		}
-		out[full] = fmt.Sprintf("%v", value)
+func isStructured(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".toml", ".yaml", ".yml":
+		return true
 	}
+	return false
+}
+
+func loadExpected(path string) (map[string]string, error) {
+	if isStructured(path) {
+		return structured.FlattenFile(path)
+	}
+	return dotenv.ParseFile(path)
 }

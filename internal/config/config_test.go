@@ -12,11 +12,14 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if got := cfg.Deps.Ecosystems; len(got) != 1 || got[0] != "npm" {
-		t.Errorf("Deps.Ecosystems = %v, want [npm]", got)
+	// all supported ecosystems by default: missing lockfiles are skipped,
+	// so this makes zero-config scans work in any project type
+	if got := cfg.Deps.Ecosystems; len(got) != 3 || got[0] != "npm" || got[1] != "pip" || got[2] != "cargo" {
+		t.Errorf("Deps.Ecosystems = %v, want [npm pip cargo]", got)
 	}
-	if cfg.Deps.StalenessDays != 365 {
-		t.Errorf("Deps.StalenessDays = %d, want 365", cfg.Deps.StalenessDays)
+	// staleness is opt-in: it costs one registry request per package
+	if cfg.Deps.StalenessDays != 0 {
+		t.Errorf("Deps.StalenessDays = %d, want 0 (disabled by default)", cfg.Deps.StalenessDays)
 	}
 	if cfg.Logs.ErrorSpikeThreshold != 20 {
 		t.Errorf("Logs.ErrorSpikeThreshold = %d, want 20", cfg.Logs.ErrorSpikeThreshold)

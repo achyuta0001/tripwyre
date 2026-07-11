@@ -3,6 +3,8 @@ package logscan
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -176,5 +178,48 @@ func TestScanAdapterErrorPropagates(t *testing.T) {
 func TestScannerName(t *testing.T) {
 	if got := NewWithSources(testCfg(), nil).Name(); got != "logs" {
 		t.Errorf("Name() = %q, want logs", got)
+	}
+}
+
+func TestNewPicksJSONAdapterByExtension(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.jsonl"), []byte(`{"level":"error","message":"x"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "app.log"), []byte("2026-07-11T03:00:01Z ERROR x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.LogsConfig{Sources: []string{"app.jsonl", "app.log"}, ErrorSpikeThreshold: 20, ClusterMinSize: 5}
+	s := New(cfg, dir)
+	if len(s.adapters) != 2 {
+		t.Fatalf("adapters = %d, want 2", len(s.adapters))
+	}
+	names := map[string]bool{}
+	for _, a := range s.adapters {
+		names[a.Name()] = true
+	}
+	if !names["jsonlog"] || !names["logfile"] {
+		t.Errorf("adapter names = %v, want jsonlog for .jsonl and logfile for .log", names)
+	}
+}
+
+func TestScanClustersJSONLogErrors(t *testing.T) {
+	dir := t.TempDir()
+	var lines strings.Builder
+	for i := 0; i < 5; i++ {
+		fmt.Fprintf(&lines, `{"timestamp":"2026-07-11T03:0%d:01Z","level":"error","message":"db timeout after %d ms"}`+"\n", i, 100+i)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "app.json"), []byte(lines.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.LogsConfig{Sources: []string{"app.json"}, ErrorSpikeThreshold: 0, ClusterMinSize: 5}
+	findings, err := New(cfg, dir).Scan()
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	if f := findByTitlePart(findings, "recurring error"); f == nil {
+		t.Errorf("JSON log errors not clustered: %+v", findings)
 	}
 }

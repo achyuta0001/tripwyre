@@ -1,15 +1,17 @@
 [deps]
-ecosystems = ["npm", "pip"]
+ecosystems = ["npm", "pip", "cargo"]
 license_allowlist = ["MIT", "Apache-2.0", "BSD-3-Clause", "ISC"]
-staleness_days = 365
+staleness_days = 365   # 0 (default) disables; costs one registry request per unique package
 
 [config]
-sources = [".env", "config/prod.toml"]
+# .toml/.yaml/.yml sources flatten to dotted keys; anything else parses as .env
+sources = [".env", "config/prod.toml", "config/prod.yaml"]
 expected = "config/expected.toml"
 redact_patterns = [".*SECRET.*", ".*KEY.*", ".*PASSWORD.*"]
 
 [logs]
-sources = ["logs/app.log"]
+# .json/.jsonl sources parse as JSON lines; anything else as plaintext
+sources = ["logs/app.log", "logs/app.jsonl"]
 error_spike_threshold = 20
 cluster_min_size = 5
 

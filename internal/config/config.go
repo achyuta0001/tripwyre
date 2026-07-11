@@ -40,9 +40,12 @@ type ReporterConfig struct {
 func Load(path string) (*Config, error) {
 	cfg := &Config{
 		Deps: DepsConfig{
-			Ecosystems:       []string{"npm"},
+			// all supported ecosystems: missing lockfiles are skipped, so
+			// zero-config scans work in any project type
+			Ecosystems:       []string{"npm", "pip", "cargo"},
 			LicenseAllowlist: []string{"MIT", "Apache-2.0", "BSD-3-Clause", "ISC"},
-			StalenessDays:    365,
+			// staleness stays 0 (disabled): it costs one registry request
+			// per unique package, so it's opt-in via staleness_days
 		},
 		Logs: LogsConfig{
 			ErrorSpikeThreshold: 20,

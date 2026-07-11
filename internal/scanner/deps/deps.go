@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/achyuta0001/tripwyre/internal/adapter"
+	"github.com/achyuta0001/tripwyre/internal/adapter/cargo"
 	"github.com/achyuta0001/tripwyre/internal/adapter/npm"
+	"github.com/achyuta0001/tripwyre/internal/adapter/pip"
 	"github.com/achyuta0001/tripwyre/internal/config"
 	"github.com/achyuta0001/tripwyre/internal/finding"
 )
@@ -37,10 +39,18 @@ type VulnSource interface {
 	FindVulns(pkgs []Package) (map[Package][]Vuln, error)
 }
 
+// PublishSource answers "when was this package last published?".
+// The production implementation queries the package registries
+// (npm, PyPI, crates.io). A zero time means "unknown".
+type PublishSource interface {
+	LastPublish(pkg Package) (time.Time, error)
+}
+
 type Scanner struct {
-	cfg      config.DepsConfig
-	adapters []adapter.Adapter
-	vulns    VulnSource
+	cfg       config.DepsConfig
+	adapters  []adapter.Adapter
+	vulns     VulnSource
+	publishes PublishSource
 }
 
 // New builds the production scanner for a project directory: one adapter
@@ -56,15 +66,25 @@ func New(cfg config.DepsConfig, dir string) *Scanner {
 			if _, err := os.Stat(lock); err == nil {
 				adapters = append(adapters, npm.New(lock))
 			}
-			// TODO: pip (requirements.txt/poetry.lock), cargo (Cargo.lock), go (go.sum)
+		case "pip":
+			reqs := filepath.Join(dir, "requirements.txt")
+			if _, err := os.Stat(reqs); err == nil {
+				adapters = append(adapters, pip.New(reqs))
+			}
+		case "cargo":
+			lock := filepath.Join(dir, "Cargo.lock")
+			if _, err := os.Stat(lock); err == nil {
+				adapters = append(adapters, cargo.New(lock))
+			}
+			// TODO: go (go.sum), pip poetry.lock
 		}
 	}
-	return NewWithSources(cfg, adapters, NewOSVClient(""))
+	return NewWithSources(cfg, adapters, NewOSVClient(""), NewRegistryClient())
 }
 
-// NewWithSources wires explicit adapters and vuln source; used by tests.
-func NewWithSources(cfg config.DepsConfig, adapters []adapter.Adapter, vulns VulnSource) *Scanner {
-	return &Scanner{cfg: cfg, adapters: adapters, vulns: vulns}
+// NewWithSources wires explicit adapters and data sources; used by tests.
+func NewWithSources(cfg config.DepsConfig, adapters []adapter.Adapter, vulns VulnSource, publishes PublishSource) *Scanner {
+	return &Scanner{cfg: cfg, adapters: adapters, vulns: vulns, publishes: publishes}
 }
 
 func (s *Scanner) Name() string { return "deps" }
@@ -88,11 +108,62 @@ func (s *Scanner) Scan() ([]finding.Finding, error) {
 		return nil, err
 	}
 	findings = append(findings, cveFindings...)
-
-	// TODO: staleness rule (no publish in cfg.StalenessDays) — needs
-	// registry publish dates, deferred until a registry client exists.
+	findings = append(findings, s.stalenessFindings(records)...)
 
 	return findings, nil
+}
+
+// stalenessFindings flags packages whose registry hasn't seen a release
+// in cfg.StalenessDays. Opt-in (staleness_days > 0): it costs one
+// registry request per unique package. Best-effort: a failed or unknown
+// lookup skips the package rather than failing the scan — staleness is
+// an INFO heuristic, not worth breaking a CI gate over a flaky registry.
+func (s *Scanner) stalenessFindings(records []adapter.RawRecord) []finding.Finding {
+	if s.cfg.StalenessDays <= 0 || s.publishes == nil {
+		return nil
+	}
+
+	seen := map[Package]bool{}
+	var findings []finding.Finding
+	for _, r := range records {
+		eco, _ := r.Payload["ecosystem"].(string)
+		name, _ := r.Payload["name"].(string)
+		if name == "" {
+			continue
+		}
+		pkg := Package{Ecosystem: eco, Name: name}
+		if seen[pkg] {
+			continue
+		}
+		seen[pkg] = true
+
+		last, err := s.publishes.LastPublish(pkg)
+		if err != nil || last.IsZero() {
+			continue
+		}
+		age := int(time.Since(last).Hours() / 24)
+		if age <= s.cfg.StalenessDays {
+			continue
+		}
+
+		findings = append(findings, finding.Finding{
+			Severity: finding.Info,
+			Scanner:  finding.ScannerDeps,
+			Title: fmt.Sprintf("%s — no release in %d days (last publish %s)",
+				name, age, last.Format("2006-01-02")),
+			Detail: map[string]any{
+				"package":        name,
+				"ecosystem":      eco,
+				"last_publish":   last.Format("2006-01-02"),
+				"age_days":       age,
+				"threshold_days": s.cfg.StalenessDays,
+			},
+			Timestamp: time.Now(),
+		})
+	}
+
+	sort.Slice(findings, func(i, j int) bool { return findings[i].Title < findings[j].Title })
+	return findings
 }
 
 func (s *Scanner) licenseFindings(records []adapter.RawRecord) []finding.Finding {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/achyuta0001/tripwyre/internal/adapter"
+	"github.com/achyuta0001/tripwyre/internal/adapter/jsonlog"
 	"github.com/achyuta0001/tripwyre/internal/adapter/logfile"
 	"github.com/achyuta0001/tripwyre/internal/config"
 	"github.com/achyuta0001/tripwyre/internal/finding"
@@ -26,14 +27,21 @@ type Scanner struct {
 	adapters []adapter.Adapter
 }
 
-// New builds the production scanner: one logfile adapter per configured
-// source that exists in dir. Missing log files are skipped so `scan`
-// works before any logs exist.
+// New builds the production scanner: one adapter per configured source
+// that exists in dir — .json/.jsonl sources parse as JSON lines, the
+// rest as plaintext. Missing log files are skipped so `scan` works
+// before any logs exist.
 func New(cfg config.LogsConfig, dir string) *Scanner {
 	var adapters []adapter.Adapter
 	for _, src := range cfg.Sources {
 		path := filepath.Join(dir, src)
-		if _, err := os.Stat(path); err == nil {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		switch strings.ToLower(filepath.Ext(path)) {
+		case ".json", ".jsonl":
+			adapters = append(adapters, jsonlog.New(path))
+		default:
 			adapters = append(adapters, logfile.New(path))
 		}
 	}

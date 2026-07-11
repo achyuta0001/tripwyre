@@ -77,20 +77,20 @@ type Adapter interface {
 }
 ```
 
-**Deps adapters:** `npm` (package-lock.json), `pip` (requirements.txt / poetry.lock), `cargo` (Cargo.lock), `go` (go.sum)
+**Deps adapters:** `npm` (package-lock.json), `pip` (requirements.txt), `cargo` (Cargo.lock) — poetry.lock and go.sum planned
 
-**Config adapters:** `.env` files, TOML/YAML config, terraform `.tfvars`
+**Config adapters:** `.env` files, TOML/YAML config — terraform `.tfvars` planned
 
-**Log adapters:** plaintext log files, JSON structured logs, Kubernetes API, Loki, Elasticsearch
+**Log adapters:** plaintext log files, JSON-lines structured logs — Kubernetes API, Loki, Elasticsearch planned
 
 ### Rules Engine
 
-Rules are pure functions: `RawRecord → *Finding`. No LLM cost, no network calls beyond OSV.dev.
+Rules are pure functions: `RawRecord → *Finding`. No LLM cost, no network calls beyond OSV.dev and (opt-in) the package registries.
 
 **Deps rules:**
 - CVE lookup against [OSV.dev](https://osv.dev) (free, no auth)
 - License compatibility check against allowlist
-- Staleness flag (no publish in N days)
+- Staleness flag (no registry release in N days; opt-in via `staleness_days` — costs one registry request per unique package)
 
 **Config rules:**
 - Key present in expected, missing in observed → `WARNING`
@@ -182,17 +182,17 @@ steps:
 # tripwyre.toml
 
 [deps]
-ecosystems = ["npm", "pip"]
+ecosystems = ["npm", "pip", "cargo"]
 license_allowlist = ["MIT", "Apache-2.0", "BSD-3-Clause", "ISC"]
-staleness_days = 365
+staleness_days = 365   # 0 (default) disables; one registry request per package
 
 [config]
-sources = [".env", "config/prod.toml"]
+sources = [".env", "config/prod.toml", "config/prod.yaml"]
 expected = "config/expected.toml"
 redact_patterns = [".*SECRET.*", ".*KEY.*", ".*PASSWORD.*"]
 
 [logs]
-sources = ["logs/app.log"]
+sources = ["logs/app.log", "logs/app.jsonl"]   # .json/.jsonl parse as JSON lines
 error_spike_threshold = 20
 cluster_min_size = 5
 
@@ -215,9 +215,12 @@ backend = "template"          # free default
 - [x] Config scanner — `.env` adapter + diff rules (secrets redacted)
 - [x] Log scanner — plaintext adapter + spike detection + clustering
 - [x] GitHub Action with PR findings comment
-- [ ] Deps staleness rule (needs registry publish dates)
+- [x] Deps staleness rule (npm/PyPI/crates.io registry publish dates, opt-in)
 - [x] `LLMReporter` + cross-scanner synthesis
-- [ ] Additional adapters (pip, cargo, YAML, JSON logs, k8s API)
+- [x] pip adapter (requirements.txt) + cargo adapter (Cargo.lock)
+- [x] YAML/TOML config sources + JSON-lines log adapter
+- [ ] Remote adapters (k8s API, Loki, Elasticsearch — need live infra)
+- [ ] More lockfiles (poetry.lock, go.sum)
 
 ---
 

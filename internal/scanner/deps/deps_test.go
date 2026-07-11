@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/achyuta0001/tripwyre/internal/adapter"
 	"github.com/achyuta0001/tripwyre/internal/config"
@@ -64,7 +65,7 @@ func TestScanLicenseNotInAllowlist(t *testing.T) {
 		record("good-pkg", "1.0.0", "MIT"),
 		record("bad-pkg", "2.0.0", "GPL-3.0"),
 	}}
-	s := NewWithSources(testCfg(), []adapter.Adapter{a}, fakeVulnSource{})
+	s := NewWithSources(testCfg(), []adapter.Adapter{a}, fakeVulnSource{}, nil)
 
 	findings, err := s.Scan()
 	if err != nil {
@@ -88,7 +89,7 @@ func TestScanLicenseNotInAllowlist(t *testing.T) {
 
 func TestScanUnknownLicenseIsNotFlagged(t *testing.T) {
 	a := stubAdapter{records: []adapter.RawRecord{record("no-license-pkg", "1.0.0", "")}}
-	s := NewWithSources(testCfg(), []adapter.Adapter{a}, fakeVulnSource{})
+	s := NewWithSources(testCfg(), []adapter.Adapter{a}, fakeVulnSource{}, nil)
 
 	findings, err := s.Scan()
 	if err != nil {
@@ -108,7 +109,7 @@ func TestScanCVEsProduceSeverityMappedFinding(t *testing.T) {
 		},
 	}}
 	a := stubAdapter{records: []adapter.RawRecord{record("lodash", "4.17.20", "MIT")}}
-	s := NewWithSources(testCfg(), []adapter.Adapter{a}, vs)
+	s := NewWithSources(testCfg(), []adapter.Adapter{a}, vs, nil)
 
 	findings, err := s.Scan()
 	if err != nil {
@@ -140,7 +141,7 @@ func TestScanLowSeverityOnlyIsInfo(t *testing.T) {
 		pkg: {{ID: "GHSA-3", Severity: "LOW"}},
 	}}
 	a := stubAdapter{records: []adapter.RawRecord{record("meh", "1.0.0", "MIT")}}
-	s := NewWithSources(testCfg(), []adapter.Adapter{a}, vs)
+	s := NewWithSources(testCfg(), []adapter.Adapter{a}, vs, nil)
 
 	findings, err := s.Scan()
 	if err != nil {
@@ -152,7 +153,7 @@ func TestScanLowSeverityOnlyIsInfo(t *testing.T) {
 }
 
 func TestScanAdapterErrorPropagates(t *testing.T) {
-	s := NewWithSources(testCfg(), []adapter.Adapter{stubAdapter{err: errors.New("no lockfile")}}, fakeVulnSource{})
+	s := NewWithSources(testCfg(), []adapter.Adapter{stubAdapter{err: errors.New("no lockfile")}}, fakeVulnSource{}, nil)
 	if _, err := s.Scan(); err == nil {
 		t.Fatal("Scan() error = nil, want adapter error")
 	}
@@ -160,14 +161,14 @@ func TestScanAdapterErrorPropagates(t *testing.T) {
 
 func TestScanVulnSourceErrorPropagates(t *testing.T) {
 	a := stubAdapter{records: []adapter.RawRecord{record("x", "1.0.0", "MIT")}}
-	s := NewWithSources(testCfg(), []adapter.Adapter{a}, fakeVulnSource{err: errors.New("osv down")})
+	s := NewWithSources(testCfg(), []adapter.Adapter{a}, fakeVulnSource{err: errors.New("osv down")}, nil)
 	if _, err := s.Scan(); err == nil {
 		t.Fatal("Scan() error = nil, want vuln source error")
 	}
 }
 
 func TestScannerName(t *testing.T) {
-	s := NewWithSources(testCfg(), nil, fakeVulnSource{})
+	s := NewWithSources(testCfg(), nil, fakeVulnSource{}, nil)
 	if s.Name() != "deps" {
 		t.Errorf("Name() = %q, want deps", s.Name())
 	}
@@ -190,5 +191,136 @@ func TestNewSkipsMissingLockfiles(t *testing.T) {
 	}
 	if s.vulns == nil {
 		t.Error("New must wire a vuln source")
+	}
+}
+
+func TestNewWiresPipAndCargoAdapters(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("requests==2.31.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.lock"), []byte("version = 3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DepsConfig{Ecosystems: []string{"npm", "pip", "cargo"}}
+	s := New(cfg, dir)
+	if len(s.adapters) != 2 {
+		t.Fatalf("adapters = %d, want 2 (pip + cargo; npm lockfile absent)", len(s.adapters))
+	}
+	names := map[string]bool{}
+	for _, a := range s.adapters {
+		names[a.Name()] = true
+	}
+	if !names["pip"] || !names["cargo"] {
+		t.Errorf("adapter names = %v, want pip and cargo", names)
+	}
+}
+
+type fakePublishSource struct {
+	dates map[string]time.Time // key: ecosystem/name
+	err   error
+	calls int
+}
+
+func (f *fakePublishSource) LastPublish(pkg Package) (time.Time, error) {
+	f.calls++
+	if f.err != nil {
+		return time.Time{}, f.err
+	}
+	return f.dates[pkg.Ecosystem+"/"+pkg.Name], nil
+}
+
+func TestScanStalePackageProducesInfoFinding(t *testing.T) {
+	a := stubAdapter{records: []adapter.RawRecord{record("old-pkg", "1.0.0", "MIT")}}
+	pub := &fakePublishSource{dates: map[string]time.Time{
+		"npm/old-pkg": time.Now().AddDate(-2, 0, 0), // last release 2 years ago
+	}}
+	cfg := testCfg()
+	cfg.StalenessDays = 365
+
+	s := NewWithSources(cfg, []adapter.Adapter{a}, fakeVulnSource{}, pub)
+	findings, err := s.Scan()
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+
+	f := findByTitlePart(findings, "old-pkg")
+	if f == nil {
+		t.Fatalf("no staleness finding for old-pkg in %v", findings)
+	}
+	if f.Severity != finding.Info {
+		t.Errorf("severity = %v, want INFO", f.Severity)
+	}
+	if !strings.Contains(f.Title, "no release") {
+		t.Errorf("title = %q, want it to mention no release", f.Title)
+	}
+}
+
+func TestScanFreshPackageNotFlaggedStale(t *testing.T) {
+	a := stubAdapter{records: []adapter.RawRecord{record("fresh-pkg", "1.0.0", "MIT")}}
+	pub := &fakePublishSource{dates: map[string]time.Time{
+		"npm/fresh-pkg": time.Now().AddDate(0, -1, 0), // released last month
+	}}
+	cfg := testCfg()
+	cfg.StalenessDays = 365
+
+	s := NewWithSources(cfg, []adapter.Adapter{a}, fakeVulnSource{}, pub)
+	findings, err := s.Scan()
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	if f := findByTitlePart(findings, "no release"); f != nil {
+		t.Errorf("fresh package flagged stale: %v", f)
+	}
+}
+
+func TestScanStalenessDisabledSkipsLookups(t *testing.T) {
+	a := stubAdapter{records: []adapter.RawRecord{record("pkg", "1.0.0", "MIT")}}
+	pub := &fakePublishSource{}
+	cfg := testCfg()
+	cfg.StalenessDays = 0 // disabled
+
+	s := NewWithSources(cfg, []adapter.Adapter{a}, fakeVulnSource{}, pub)
+	if _, err := s.Scan(); err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	if pub.calls != 0 {
+		t.Errorf("publish source called %d times with staleness disabled, want 0", pub.calls)
+	}
+}
+
+func TestScanStalenessLookupErrorIsSkippedNotFatal(t *testing.T) {
+	a := stubAdapter{records: []adapter.RawRecord{record("pkg", "1.0.0", "MIT")}}
+	pub := &fakePublishSource{err: errors.New("registry down")}
+	cfg := testCfg()
+	cfg.StalenessDays = 365
+
+	s := NewWithSources(cfg, []adapter.Adapter{a}, fakeVulnSource{}, pub)
+	findings, err := s.Scan()
+	if err != nil {
+		t.Fatalf("Scan() error = %v, staleness is best-effort and must not fail the scan", err)
+	}
+	if f := findByTitlePart(findings, "no release"); f != nil {
+		t.Errorf("errored lookup produced a finding: %v", f)
+	}
+}
+
+func TestScanStalenessDedupesByPackage(t *testing.T) {
+	// same package appearing twice (e.g. two lockfile paths) → one lookup
+	a := stubAdapter{records: []adapter.RawRecord{
+		record("dup", "1.0.0", "MIT"),
+		record("dup", "1.0.0", "MIT"),
+	}}
+	pub := &fakePublishSource{dates: map[string]time.Time{}}
+	cfg := testCfg()
+	cfg.StalenessDays = 365
+
+	s := NewWithSources(cfg, []adapter.Adapter{a}, fakeVulnSource{}, pub)
+	if _, err := s.Scan(); err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	if pub.calls != 1 {
+		t.Errorf("publish source called %d times for one unique package, want 1", pub.calls)
 	}
 }
