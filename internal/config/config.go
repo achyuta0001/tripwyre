@@ -14,9 +14,9 @@ type Config struct {
 }
 
 type DepsConfig struct {
-	Ecosystems      []string `toml:"ecosystems"`
+	Ecosystems       []string `toml:"ecosystems"`
 	LicenseAllowlist []string `toml:"license_allowlist"`
-	StalenessDays   int      `toml:"staleness_days"`
+	StalenessDays    int      `toml:"staleness_days"`
 }
 
 type ConfigConfig struct {
@@ -26,13 +26,13 @@ type ConfigConfig struct {
 }
 
 type LogsConfig struct {
-	Sources              []string `toml:"sources"`
-	ErrorSpikeThreshold  int      `toml:"error_spike_threshold"`
-	ClusterMinSize       int      `toml:"cluster_min_size"`
+	Sources             []string `toml:"sources"`
+	ErrorSpikeThreshold int      `toml:"error_spike_threshold"`
+	ClusterMinSize      int      `toml:"cluster_min_size"`
 }
 
 type ReporterConfig struct {
-	Backend   string `toml:"backend"`    // "template" or "llm"
+	Backend   string `toml:"backend"` // "template" or "llm"
 	Model     string `toml:"model"`
 	APIKeyEnv string `toml:"api_key_env"`
 }
@@ -40,9 +40,9 @@ type ReporterConfig struct {
 func Load(path string) (*Config, error) {
 	cfg := &Config{
 		Deps: DepsConfig{
-			Ecosystems:      []string{"npm"},
+			Ecosystems:       []string{"npm"},
 			LicenseAllowlist: []string{"MIT", "Apache-2.0", "BSD-3-Clause", "ISC"},
-			StalenessDays:   365,
+			StalenessDays:    365,
 		},
 		Logs: LogsConfig{
 			ErrorSpikeThreshold: 20,

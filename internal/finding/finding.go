@@ -21,10 +21,10 @@ const (
 // Finding is the canonical output of every scanner.
 // Rules engines produce Findings; reporters consume them.
 type Finding struct {
-	Severity  Severity
-	Scanner   Scanner
-	Title     string
-	Detail    map[string]any
-	Context   string    // raw excerpt passed to LLM reporter if enabled
-	Timestamp time.Time
+	Severity  Severity       `json:"severity"`
+	Scanner   Scanner        `json:"scanner"`
+	Title     string         `json:"title"`
+	Detail    map[string]any `json:"detail,omitempty"`
+	Context   string         `json:"context,omitempty"` // raw excerpt passed to LLM reporter if enabled
+	Timestamp time.Time      `json:"timestamp"`
 }
