@@ -112,7 +112,7 @@ type Synthesizer interface {
 
 `TemplateReporter` renders structured markdown from finding fields — free, default, no dependencies.
 
-`LLMReporter` (coming soon) sends the structured finding list to your LLM of choice. The LLM never receives raw logs or raw config — only processed findings. Token counts stay low; cost stays predictable.
+`LLMReporter` sends the structured finding list to Claude (your API key, your model choice, your bill). The LLM never receives raw logs or raw config — only processed findings. Token counts stay low; cost stays predictable. Enable it with `[reporter] backend = "llm"` in `tripwyre.toml` and an `ANTHROPIC_API_KEY`; the deterministic report is always printed first, with the synthesis appended after it.
 
 ---
 
@@ -216,8 +216,8 @@ backend = "template"          # free default
 - [x] Log scanner — plaintext adapter + spike detection + clustering
 - [x] GitHub Action with PR findings comment
 - [ ] Deps staleness rule (needs registry publish dates)
+- [x] `LLMReporter` + cross-scanner synthesis
 - [ ] Additional adapters (pip, cargo, YAML, JSON logs, k8s API)
-- [ ] `LLMReporter` + cross-scanner synthesis
 
 ---
 

@@ -15,6 +15,6 @@ cluster_min_size = 5
 
 [reporter]
 backend = "template"          # free default
-# backend   = "llm"
-# model     = "claude-haiku-4-5-20251001"
-# api_key_env = "ANTHROPIC_API_KEY"
+# backend     = "llm"
+# model       = "claude-opus-4-8"    # default if omitted; use "claude-haiku-4-5" for lowest cost
+# api_key_env = "ANTHROPIC_API_KEY"  # default if omitted

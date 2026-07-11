@@ -8,6 +8,7 @@ import (
 
 	"github.com/achyuta0001/tripwyre/internal/config"
 	"github.com/achyuta0001/tripwyre/internal/finding"
+	"github.com/achyuta0001/tripwyre/internal/reporter"
 	"github.com/achyuta0001/tripwyre/internal/scanner"
 )
 
@@ -114,5 +115,37 @@ func TestRunScanInvalidFormatErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "yaml") {
 		t.Errorf("error = %q, want it to name the bad format", err)
+	}
+}
+
+func TestSelectReporterLLMBackendMissingKeyErrors(t *testing.T) {
+	cfg := &config.Config{Reporter: config.ReporterConfig{
+		Backend:   "llm",
+		APIKeyEnv: "TRIPWYRE_TEST_MISSING_KEY",
+	}}
+	if _, err := selectReporter(cfg, "text"); err == nil {
+		t.Fatal("selectReporter() error = nil, want missing API key error")
+	}
+}
+
+func TestSelectReporterJSONFormatOverridesLLMBackend(t *testing.T) {
+	cfg := &config.Config{Reporter: config.ReporterConfig{Backend: "llm"}}
+	r, err := selectReporter(cfg, "json")
+	if err != nil {
+		t.Fatalf("selectReporter() error = %v", err)
+	}
+	if _, ok := r.(*reporter.JSONReporter); !ok {
+		t.Errorf("selectReporter() = %T, want *reporter.JSONReporter (machine-readable format wins)", r)
+	}
+}
+
+func TestSelectReporterDefaultsToTemplate(t *testing.T) {
+	cfg := &config.Config{Reporter: config.ReporterConfig{Backend: "template"}}
+	r, err := selectReporter(cfg, "text")
+	if err != nil {
+		t.Fatalf("selectReporter() error = %v", err)
+	}
+	if _, ok := r.(*reporter.TemplateReporter); !ok {
+		t.Errorf("selectReporter() = %T, want *reporter.TemplateReporter", r)
 	}
 }

@@ -34,7 +34,7 @@ func runScan(w io.Writer, build func(*config.Config) ([]scanner.Scanner, error))
 		findings = append(findings, fs...)
 	}
 
-	r, err := selectReporter(format)
+	r, err := selectReporter(cfg, format)
 	if err != nil {
 		return err
 	}
@@ -47,9 +47,16 @@ func runScan(w io.Writer, build func(*config.Config) ([]scanner.Scanner, error))
 	return checkFailOn(findings, failOn)
 }
 
-func selectReporter(format string) (reporter.Synthesizer, error) {
+// selectReporter picks the output backend. --format=json always wins
+// (machine-readable output must stay deterministic); otherwise the
+// [reporter] backend from tripwyre.toml decides between the free template
+// report and the opt-in LLM synthesis.
+func selectReporter(cfg *config.Config, format string) (reporter.Synthesizer, error) {
 	switch format {
 	case "", "text":
+		if cfg.Reporter.Backend == "llm" {
+			return reporter.NewLLMReporter(cfg.Reporter)
+		}
 		return reporter.NewTemplateReporter(), nil
 	case "json":
 		return reporter.NewJSONReporter(), nil
