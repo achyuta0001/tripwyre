@@ -147,6 +147,23 @@ Without LLM, you still see both findings — you just connect the dots yourself.
 
 Exits non-zero on any `CRITICAL` finding. Works with any CI that reads exit codes.
 
+### GitHub Action
+
+The repo ships a composite action that scans, posts (and updates in place) a
+findings comment on the pull request, and gates the build:
+
+```yaml
+permissions:
+  pull-requests: write
+
+steps:
+  - uses: actions/checkout@v4
+  - uses: achyuta0001/tripwyre@main
+    with:
+      fail-on: critical      # default; empty string disables gating
+      comment: "true"        # default; set "false" to skip the PR comment
+```
+
 ---
 
 ## Kubernetes
@@ -196,8 +213,9 @@ backend = "template"          # free default
 - [x] Deps scanner — npm adapter + OSV.dev CVE lookup + license rules
 - [x] JSON output (`--format=json`)
 - [x] Config scanner — `.env` adapter + diff rules (secrets redacted)
+- [x] Log scanner — plaintext adapter + spike detection + clustering
+- [x] GitHub Action with PR findings comment
 - [ ] Deps staleness rule (needs registry publish dates)
-- [ ] Log scanner — plaintext adapter + spike detection + clustering
 - [ ] Additional adapters (pip, cargo, YAML, JSON logs, k8s API)
 - [ ] `LLMReporter` + cross-scanner synthesis
 

@@ -8,7 +8,7 @@ tripwyre is a CLI that scans a project for three kinds of risk — dependency CV
 
 This is a **proprietary commercial product**, not open source (see LICENSE). New dependencies must have permissive licenses (MIT, Apache-2.0, BSD, ISC) and be added to THIRD_PARTY_LICENSES.md; copyleft (GPL/AGPL/LGPL) is incompatible with the closed-source binary.
 
-The CLI skeleton, canonical `Finding` type, core interfaces, shared scan pipeline, the deps scanner (npm + OSV.dev), and the config drift scanner (.env diffing) are implemented with tests; the log scanner is still a stub (see Build Sequence below).
+All three scanners are implemented with tests: deps (npm + OSV.dev), config drift (.env diffing), and logs (spike detection + clustering), plus the shared scan pipeline and a composite GitHub Action (see Build Sequence below for what remains).
 
 ## Commands
 
@@ -43,6 +43,8 @@ Source Adapters → Canonical Layer → Rules Engine → Finding → Report Laye
 
 - **`internal/adapter`** — `Adapter` interface (`Name() string`, `Collect() ([]RawRecord, error)`). Each source (npm/pip/cargo/go for deps; .env/TOML/YAML/tfvars for config; plaintext/JSON/k8s/Loki/Elasticsearch for logs) implements this to produce source-agnostic `RawRecord`s. `internal/adapter/npm` parses package-lock.json (v2/v3 `packages` format with v1 `dependencies` fallback) into records carrying name/version/license/dev.
 - **`internal/scanner/configscan`** — config drift scanner. Diffs each source (via `internal/adapter/dotenv`, which parses .env files; `ParseFile` is exported for reuse) against the expected state from `cfg.Expected` (.toml expected files are flattened to dotted string keys, e.g. `cache.ttl`; anything else parses as .env). Rules: key missing from source → WARNING, value drift → WARNING, key present but not expected → INFO. Values of keys matching `redact_patterns` are replaced with `[REDACTED]` before they reach any Finding — never let secret values into titles or details. Empty `cfg.Expected` disables the scanner; configured-but-missing expected file errors at `New` (silently skipping would hide all drift).
+- **`internal/scanner/logscan`** — log anomaly scanner over `internal/adapter/logfile` (plaintext lines, best-effort ISO-8601 timestamp + level extraction). Spike rule: ≥ `error_spike_threshold` ERROR/FATAL lines from one source in a fixed 15-minute window → WARNING. Cluster rule: messages normalized (digits/hex → `#`, lowercased) and grouped; ≥ `cluster_min_size` occurrences → INFO. Lines without timestamps can still cluster but can't spike.
+- **GitHub Action** — `action.yml` (composite, repo root) builds the binary, runs `scan --format=json`, upserts a PR comment (marker `<!-- tripwyre-report -->`) via `scripts/render-comment.sh` (jq; test it locally by piping a JSON report in), then enforces the scan exit code.
 - **`internal/scanner/deps`** — the first real scanner. Rules: CVE lookup via the `VulnSource` interface (production impl is `OSVClient` in `osv.go`: one `/v1/querybatch` call per 1000 packages, then one `/v1/vulns/{id}` fetch per unique vuln ID) and license-allowlist check (unknown/empty licenses are deliberately not flagged — too noisy). Severity mapping: any CRITICAL/HIGH vuln → CRITICAL finding, MODERATE/unknown → WARNING, LOW-only → INFO. `New(cfg, dir)` skips ecosystems whose lockfile is absent from dir so `scan` works in any project; `NewWithSources` injects fake adapters/vuln sources in tests. Staleness rule is a TODO (needs registry publish dates).
 - **`internal/finding`** — the canonical `Finding` struct that every scanner must emit. This is the contract point of the whole system: everything upstream (adapters, rules) is scanner-specific and swappable; everything downstream (reporters, CI integration) is generic and depends only on `Finding`.
 - **`internal/scanner`** — `Scanner` interface (`Name() string`, `Scan() ([]finding.Finding, error)`) that each domain scanner (deps/config/logs) implements, wrapping its adapters + rules.
@@ -63,8 +65,9 @@ From the README — treat this as the source of truth for what's implemented vs.
 - [x] `--fail-on` CI exit code integration (tested)
 - [x] Deps scanner — npm adapter + OSV.dev CVE lookup + license rules
 - [x] Config scanner — `.env` adapter + diff rules (secrets redacted)
+- [x] Log scanner — plaintext adapter + spike detection + clustering
+- [x] GitHub Action (`action.yml` + `scripts/render-comment.sh`) with PR findings comment
 - [ ] Deps staleness rule (needs registry publish dates)
-- [ ] Log scanner — plaintext adapter + spike detection + clustering
 - [ ] Additional adapters (pip, cargo, YAML, JSON logs, k8s API)
 - [ ] `LLMReporter` + cross-scanner synthesis
 

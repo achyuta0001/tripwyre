@@ -1,0 +1,72 @@
+name: tripwyre
+description: >
+  Scan dependencies, config drift, and logs; optionally comment findings
+  on the pull request and fail the build on severe findings.
+
+inputs:
+  fail-on:
+    description: Fail the build if findings at this severity or above exist (critical|warning|info). Empty disables gating.
+    default: critical
+  config:
+    description: Path to tripwyre.toml, relative to the workspace.
+    default: tripwyre.toml
+  comment:
+    description: Post (or update) a findings comment on the pull request.
+    default: "true"
+  github-token:
+    description: Token used to post the PR comment.
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version: "1.22"
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+
+    - name: Build tripwyre
+      shell: bash
+      run: go build -o "${RUNNER_TEMP}/tripwyre" .
+      working-directory: ${{ github.action_path }}
+
+    - name: Scan
+      id: scan
+      shell: bash
+      run: |
+        set +e
+        "${RUNNER_TEMP}/tripwyre" scan \
+          --config "${{ inputs.config }}" \
+          --format=json \
+          ${{ inputs.fail-on != '' && format('--fail-on={0}', inputs.fail-on) || '' }} \
+          > "${RUNNER_TEMP}/tripwyre-report.json"
+        echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+        cat "${RUNNER_TEMP}/tripwyre-report.json"
+
+    - name: Comment on PR
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+      run: |
+        "${GITHUB_ACTION_PATH}/scripts/render-comment.sh" \
+          < "${RUNNER_TEMP}/tripwyre-report.json" \
+          > "${RUNNER_TEMP}/tripwyre-comment.md"
+
+        marker="<!-- tripwyre-report -->"
+        existing_id=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+          --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -1)
+
+        if [ -n "$existing_id" ]; then
+          gh api --method PATCH "repos/${REPO}/issues/comments/${existing_id}" \
+            -F body=@"${RUNNER_TEMP}/tripwyre-comment.md" > /dev/null
+        else
+          gh api --method POST "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            -F body=@"${RUNNER_TEMP}/tripwyre-comment.md" > /dev/null
+        fi
+
+    - name: Enforce fail-on
+      shell: bash
+      run: exit "${{ steps.scan.outputs.exit_code }}"
