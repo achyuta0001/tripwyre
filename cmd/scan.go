@@ -10,6 +10,7 @@ import (
 	"github.com/achyuta0001/tripwyre/internal/scanner"
 	"github.com/achyuta0001/tripwyre/internal/scanner/configscan"
 	"github.com/achyuta0001/tripwyre/internal/scanner/deps"
+	"github.com/achyuta0001/tripwyre/internal/scanner/logscan"
 	"github.com/spf13/cobra"
 )
 
@@ -22,10 +23,10 @@ var scanCmd = &cobra.Command{
 			if err != nil {
 				return nil, err
 			}
-			// TODO: add log scanner when implemented
 			return []scanner.Scanner{
 				deps.New(cfg.Deps, "."),
 				cs,
+				logscan.New(cfg.Logs, "."),
 			}, nil
 		})
 	},
