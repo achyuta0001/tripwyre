@@ -25,6 +25,8 @@ tripwyre scan          # runs all three scanners
 tripwyre deps          # dependency risk only
 tripwyre config        # config drift only
 tripwyre logs          # log patterns only
+
+tripwyre scan --format=json   # machine-readable output for jq, CI annotations, dashboards
 ```
 
 Single prioritized output:
@@ -190,9 +192,11 @@ backend = "template"          # free default
 
 - [x] Canonical `Finding` type + `TemplateReporter`
 - [x] CLI skeleton (`scan`, `deps`, `config`, `logs`, `--fail-on`)
-- [ ] Deps scanner — npm adapter + OSV.dev CVE lookup + license rules
+- [x] `--fail-on` CI exit code integration
+- [x] Deps scanner — npm adapter + OSV.dev CVE lookup + license rules
+- [x] JSON output (`--format=json`)
+- [ ] Deps staleness rule (needs registry publish dates)
 - [ ] Config scanner — `.env` adapter + diff rules
-- [ ] `--fail-on` CI exit code integration
 - [ ] Log scanner — plaintext adapter + spike detection + clustering
 - [ ] Additional adapters (pip, cargo, YAML, JSON logs, k8s API)
 - [ ] `LLMReporter` + cross-scanner synthesis
@@ -204,3 +208,9 @@ backend = "template"          # free default
 > Everything above the canonical `Finding` is scanner-specific and swappable. Everything below it — the report format, the Synthesizer interface, the CI integration — never changes when a new scanner or adapter is added.
 
 Rules handle the deterministic 90%. LLM handles the last 10%. You pay for neither until you choose to.
+
+---
+
+## License
+
+tripwyre is proprietary software — see [LICENSE](LICENSE). It is not open source; use requires a commercial license agreement with the copyright holder. Bundled open-source components and their licenses are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

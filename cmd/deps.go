@@ -1,11 +1,11 @@
 package cmd
 
 import (
-	"fmt"
+	"os"
 
 	"github.com/achyuta0001/tripwyre/internal/config"
-	"github.com/achyuta0001/tripwyre/internal/finding"
-	"github.com/achyuta0001/tripwyre/internal/reporter"
+	"github.com/achyuta0001/tripwyre/internal/scanner"
+	"github.com/achyuta0001/tripwyre/internal/scanner/deps"
 	"github.com/spf13/cobra"
 )
 
@@ -13,26 +13,9 @@ var depsCmd = &cobra.Command{
 	Use:   "deps",
 	Short: "Scan dependencies for CVEs, license issues, and staleness",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load(cfgFile)
-		if err != nil {
-			return fmt.Errorf("loading config: %w", err)
-		}
-
-		// TODO: implement deps scanner
-		// s := deps.New(cfg.Deps)
-		// findings, err := s.Scan()
-
-		_ = cfg
-		var findings []finding.Finding
-
-		r := reporter.NewTemplateReporter()
-		output, err := r.Summarize(findings)
-		if err != nil {
-			return err
-		}
-
-		fmt.Print(output)
-		return checkFailOn(findings, failOn)
+		return runScan(os.Stdout, func(cfg *config.Config) []scanner.Scanner {
+			return []scanner.Scanner{deps.New(cfg.Deps, ".")}
+		})
 	},
 }
 
